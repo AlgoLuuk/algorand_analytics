@@ -1,0 +1,150 @@
+from IPython import get_ipython
+get_ipython().magic('reset -sf')
+get_ipython().run_line_magic('matplotlib', 'qt5')
+
+from algosdk.v2client import indexer
+
+import time
+
+import pandas as pd
+
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
+
+algod_address = "https://mainnet-algorand.api.purestake.io/idx2"
+headers = {
+   "X-API-Key": "key",
+}
+
+myindexer = indexer.IndexerClient("", algod_address, headers)
+
+
+def Algomint_bridge_checker(token, minimum_transacted):
+    
+    #Block in which the the first Algomint token is minted
+    first_algomint_block = 17076484
+
+    
+    #Asset_id of Algomint tokens
+    if token == "goBTC":
+        token_ID = 386192725
+    elif token == "goETH":
+        token_ID = 386195940
+    else:
+        print("Token does not exist")
+        return
+    
+    
+    token_bridgers = myindexer.search_transactions_by_address(
+        address="ETGSQKACKC56JWGMDAEP5S2JVQWRKTQUVKCZTMPNUGZLDVCWPY63LSI3H4",
+        min_amount=(minimum_transacted),min_round=(first_algomint_block),
+        asset_id=(token_ID))
+    
+    #Define transactions dictionary by extracting from indexed transactions
+    transactions = (token_bridgers["transactions"])
+    #Create lists for the wanted outputs
+    wallets = []
+    unique_wallets = []
+    tokens_bridged = []
+
+    #For loop that creates a list containing the amount sent in each transaction
+    for x in range(len(transactions)):
+         transfer = transactions[x]
+         asset_transfer = transfer["asset-transfer-transaction"]
+         receiver = asset_transfer["receiver"]
+         amount = asset_transfer["amount"]
+         amount = amount/100000000
+         wallets.append(receiver)
+         tokens_bridged.append(amount)
+         
+         
+    #For loop that creates a list of all wallets that bridged - removing duplicates     
+    for x in range(len(wallets)):
+        if wallets[x] not in unique_wallets:
+            unique_wallets.append(wallets[x])
+            
+    #First the list of wallets and the token bridged per transaction are combined in a dataframe
+    #Then a for loop sums all the amounts per wallet that bridged
+         
+    wallet_amount_table = list(zip(wallets, tokens_bridged))
+    cumulative_token_bridged = {}
+    for uid, x in wallet_amount_table :         
+        if uid not in cumulative_token_bridged :
+            cumulative_token_bridged[uid] = x
+        else :
+            cumulative_token_bridged[uid] += x
+    
+    return wallet_amount_table, unique_wallets, cumulative_token_bridged
+
+def Algomint_unlock_checker(token, date):
+    
+        #Block in which the the first Algomint token is minted
+    first_algomint_block = 17076484
+
+    
+    #Asset_id of Algomint tokens
+    if token == "goBTC":
+        token_ID = 386192725
+    elif token == "goETH":
+        token_ID = 386195940
+    else:
+        print("Token does not exist")
+        return
+    
+    goBTC_received_reserve_address = myindexer.search_transactions(
+    address="ETGSQKACKC56JWGMDAEP5S2JVQWRKTQUVKCZTMPNUGZLDVCWPY63LSI3H4",
+    address_role="receiver", asset_id=token_ID, min_amount=1, 
+    min_round=first_algomint_block)
+
+    transactions = (goBTC_received_reserve_address["transactions"])
+
+    wallets = []
+    unique_wallets = []
+    goBTC_tokens_bridged = []
+    
+    for x in range(len(transactions)):
+        transfer = transactions[x]
+        sender = transfer["sender"]
+        asset_transfer = transfer["asset-transfer-transaction"]
+        amount = asset_transfer["amount"]
+        amount = amount/100000000
+        wallets.append(sender)
+        goBTC_tokens_bridged.append(amount)
+
+    for x in range(len(wallets)):
+        if wallets[x] not in unique_wallets:
+            unique_wallets.append(wallets[x])
+        
+    print("There are ", len(unique_wallets)," intermediary wallets")
+    transactions = []
+    wallets_intermediary = []
+    goBTC_tokens_bridged_intermediary = []
+
+    for x in range(len(unique_wallets)):
+        goBTC_received_intermediary_address = myindexer.search_transactions(
+            address=unique_wallets[x], address_role="receiver", 
+            asset_id=386192725, min_amount=1, start_time = date)
+        transactions = goBTC_received_intermediary_address["transactions"]
+        for i in range(len(transactions)):
+            transfer = transactions[i]
+            sender = transfer["sender"]
+            asset_transfer = transfer["asset-transfer-transaction"]
+            amount = asset_transfer["amount"]
+            amount = amount/100000000
+            wallets_intermediary.append(sender)
+            goBTC_tokens_bridged_intermediary.append(amount)
+        time.sleep(1)
+
+        
+    unlock_wallet_amount_table = list(zip(wallets_intermediary, 
+                               goBTC_tokens_bridged_intermediary))
+    cumulative_goBTC_bridged = {}
+    for uid, x in unlock_wallet_amount_table :         
+        if uid not in cumulative_goBTC_bridged :
+            cumulative_goBTC_bridged[uid] = x
+        else :
+            cumulative_goBTC_bridged[uid] += x
+            
+    return unlock_wallet_amount_table
+        
